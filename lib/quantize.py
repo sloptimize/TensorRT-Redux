@@ -131,6 +131,7 @@ def quantize_unet_fp8(
     """
     try:
         import modelopt.torch.quantization as mtq
+        import modelopt.torch.opt as mto
     except ImportError as e:
         raise ImportError(
             f"nvidia-modelopt required for FP8 quantization. "
@@ -141,10 +142,6 @@ def quantize_unet_fp8(
     config = config or QuantConfig(format=QuantFormat.FP8)
 
     logger.info("Quantizing UNet to FP8...")
-
-    # Use modelopt's built-in FP8 config
-    # FP8 supports both Linear and Conv2d layers
-    quant_config = mtq.FP8_DEFAULT_CFG
 
     # Log module types before quantization for debugging
     module_types = {}
@@ -158,13 +155,13 @@ def quantize_unet_fp8(
     conv_count = sum(1 for m in unet.modules() if isinstance(m, nn.Conv2d))
     logger.info(f"Found {linear_count} Linear and {conv_count} Conv2d modules")
 
-    # Calibration forward loop
-    def forward_loop(model):
+    # Calibration forward loop (no model parameter - uses closure)
+    def forward_loop():
         """Calibration forward loop."""
         if calibration_data is None:
             return
 
-        model.eval()
+        unet.eval()
         with torch.no_grad():
             batch_size = config.calibration_batch_size
             for i in range(0, min(len(calibration_data["x"]), config.calibration_size), batch_size):
@@ -173,20 +170,40 @@ def quantize_unet_fp8(
                 c = calibration_data["context"][i:i+batch_size]
 
                 try:
-                    model(x, t, c)
+                    unet(x, t, c)
                 except Exception as e:
                     logger.debug(f"Calibration forward error (may be expected): {e}")
                     break
 
-    # Quantize the model
-    logger.info("Applying mtq.quantize with FP8_DEFAULT_CFG...")
-    mtq.quantize(unet, quant_config, forward_loop)
+    # Use the HuggingFace diffusers pattern:
+    # 1. Apply quantization mode to insert quantizer modules
+    # 2. Calibrate to collect statistics
+    # 3. Compress to finalize quantization
+
+    # Build config for FP8 quantization
+    quant_config = {
+        "quant_cfg": mtq.FP8_DEFAULT_CFG["quant_cfg"],
+        "algorithm": "max",
+    }
+
+    logger.info("Step 1: Applying quantization mode (inserting quantizers)...")
+    mto.apply_mode(unet, mode=[("quantize", quant_config)])
 
     # Check if quantizers were inserted
     quantizer_count = sum(1 for name, module in unet.named_modules()
-                         if 'quantizer' in type(module).__name__.lower() or
-                            'quant' in name.lower())
-    logger.info(f"Quantizer modules found after quantization: {quantizer_count}")
+                         if 'quantizer' in type(module).__name__.lower())
+    logger.info(f"Quantizer modules inserted: {quantizer_count}")
+
+    if quantizer_count > 0:
+        logger.info("Step 2: Running calibration...")
+        mtq.calibrate(unet, algorithm="max", forward_loop=forward_loop)
+
+        logger.info("Step 3: Compressing model...")
+        mtq.compress(unet)
+    else:
+        logger.warning("No quantizers inserted - falling back to mtq.quantize()...")
+        # Fall back to direct quantize call
+        mtq.quantize(unet, mtq.FP8_DEFAULT_CFG, lambda m: forward_loop())
 
     # Print quantization summary if available
     try:
@@ -223,6 +240,7 @@ def quantize_unet_nvfp4(
     """
     try:
         import modelopt.torch.quantization as mtq
+        import modelopt.torch.opt as mto
     except ImportError as e:
         raise ImportError(
             f"nvidia-modelopt required for NVFP4 quantization. "
@@ -245,12 +263,6 @@ def quantize_unet_nvfp4(
     logger.info("Quantizing UNet to NVFP4...")
     logger.info("Note: NVFP4 only quantizes Linear layers. Conv2d remains in FP16/BF16.")
 
-    # Use modelopt's built-in NVFP4 config
-    # NVFP4 block quantization only supports Linear layers (not Conv2d)
-    # Conv2d layers stay in higher precision, which is NVIDIA's recommended pattern
-    # for diffusion models (maintains accuracy while still getting speedup on Linear layers)
-    quant_config = mtq.NVFP4_DEFAULT_CFG
-
     # Log module types before quantization for debugging
     module_types = {}
     for name, module in unet.named_modules():
@@ -265,11 +277,11 @@ def quantize_unet_nvfp4(
     logger.info(f"NVFP4 will quantize {linear_count} Linear layers (Conv2d stays FP16/BF16)")
 
     # Calibration forward loop
-    def forward_loop(model):
+    def forward_loop():
         if calibration_data is None:
             return
 
-        model.eval()
+        unet.eval()
         with torch.no_grad():
             batch_size = config.calibration_batch_size
             for i in range(0, min(len(calibration_data["x"]), config.calibration_size), batch_size):
@@ -278,20 +290,40 @@ def quantize_unet_nvfp4(
                 c = calibration_data["context"][i:i+batch_size]
 
                 try:
-                    model(x, t, c)
+                    unet(x, t, c)
                 except Exception as e:
                     logger.debug(f"Calibration forward error: {e}")
                     break
 
-    # Apply quantization
-    logger.info("Applying mtq.quantize with NVFP4_DEFAULT_CFG...")
-    mtq.quantize(unet, quant_config, forward_loop)
+    # Use the HuggingFace diffusers pattern:
+    # 1. Apply quantization mode to insert quantizer modules
+    # 2. Calibrate to collect statistics
+    # 3. Compress to finalize quantization
+
+    # Build config for NVFP4 quantization
+    quant_config = {
+        "quant_cfg": mtq.NVFP4_DEFAULT_CFG["quant_cfg"],
+        "algorithm": "max",
+    }
+
+    logger.info("Step 1: Applying quantization mode (inserting quantizers)...")
+    mto.apply_mode(unet, mode=[("quantize", quant_config)])
 
     # Check if quantizers were inserted
     quantizer_count = sum(1 for name, module in unet.named_modules()
-                         if 'quantizer' in type(module).__name__.lower() or
-                            'quant' in name.lower())
-    logger.info(f"Quantizer modules found after quantization: {quantizer_count}")
+                         if 'quantizer' in type(module).__name__.lower())
+    logger.info(f"Quantizer modules inserted: {quantizer_count}")
+
+    if quantizer_count > 0:
+        logger.info("Step 2: Running calibration...")
+        mtq.calibrate(unet, algorithm="max", forward_loop=forward_loop)
+
+        logger.info("Step 3: Compressing model...")
+        mtq.compress(unet)
+    else:
+        logger.warning("No quantizers inserted - falling back to mtq.quantize()...")
+        # Fall back to direct quantize call
+        mtq.quantize(unet, mtq.NVFP4_DEFAULT_CFG, lambda m: forward_loop())
 
     # Print quantization summary if available
     try:
