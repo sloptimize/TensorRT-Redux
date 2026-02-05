@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, Literal, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -409,3 +410,68 @@ def export_quantized_onnx(
     )
 
     logger.info(f"Quantized ONNX export complete: {output_path}")
+
+
+def quantize_onnx(
+    onnx_path: Path,
+    output_path: Path,
+    quant_format: QuantFormat,
+    calibration_data: Optional[Dict[str, np.ndarray]] = None,
+) -> Path:
+    """
+    Quantize an ONNX model using modelopt.onnx.quantization.
+
+    This is the recommended approach for custom architectures like ComfyUI's UNet,
+    as modelopt.torch has issues with non-standard attention implementations.
+
+    Args:
+        onnx_path: Path to input ONNX model
+        output_path: Path for quantized ONNX output
+        quant_format: Target quantization format
+        calibration_data: Optional numpy arrays for calibration
+
+    Returns:
+        Path to quantized ONNX model
+    """
+    try:
+        from modelopt.onnx.quantization import quantize
+    except ImportError as e:
+        raise ImportError(
+            f"nvidia-modelopt required for ONNX quantization. "
+            f"Install with: pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com\n"
+            f"Original error: {e}"
+        )
+
+    # Map our format to modelopt's quantize_mode
+    if quant_format == QuantFormat.FP8:
+        quantize_mode = "fp8"
+        calibration_method = "max"
+    elif quant_format == QuantFormat.NVFP4:
+        # NVFP4 uses int4 mode with block quantization
+        quantize_mode = "int4"
+        calibration_method = "awq_clip"
+    else:
+        logger.info(f"Format {quant_format} doesn't need ONNX quantization")
+        return onnx_path
+
+    logger.info(f"Quantizing ONNX model to {quantize_mode}...")
+    logger.info(f"  Input: {onnx_path}")
+    logger.info(f"  Output: {output_path}")
+
+    # Prepare calibration data if provided
+    calib_data = None
+    if calibration_data is not None:
+        # modelopt expects a dict or list of numpy arrays
+        calib_data = {k: v.cpu().numpy() if hasattr(v, 'cpu') else v
+                      for k, v in calibration_data.items()}
+
+    quantize(
+        onnx_path=str(onnx_path),
+        quantize_mode=quantize_mode,
+        calibration_data=calib_data,
+        calibration_method=calibration_method,
+        output_path=str(output_path),
+    )
+
+    logger.info(f"ONNX quantization complete: {output_path}")
+    return output_path

@@ -30,9 +30,7 @@ from ..lib.onnx_utils import (
 )
 from ..lib.quantize import (
     QuantFormat,
-    QuantConfig,
     check_quantization_available,
-    quantize_unet,
     get_calibration_data,
     export_quantized_onnx,
 )
@@ -207,8 +205,43 @@ class TRT_MODEL_EXPORT_QUANTIZED:
         logger.info(f"Converting model to {dtype}...")
         unet = unet.to(dtype=dtype)
 
-        # Generate calibration data for PTQ
+        # Create dummy inputs for ONNX export
+        dummy_inputs, input_names, output_names, dynamic_axes = self._create_dummy_inputs(
+            model_info,
+            batch_opt, height_opt, width_opt, context_opt,
+            device, dtype
+        )
+
+        # For FP8/NVFP4, we use ONNX-level quantization instead of torch-level
+        # because modelopt.torch doesn't work well with custom attention architectures
+        # like ComfyUI's UNet. The flow is:
+        # 1. Export unquantized model to ONNX
+        # 2. Quantize ONNX using modelopt.onnx.quantization
+        # 3. Build TensorRT from quantized ONNX
+
+        # Step 1: Export unquantized model to ONNX
+        logger.info("Exporting model to ONNX (will quantize ONNX afterwards)...")
+        unet.eval()
+
+        # Use standard opset for initial export
+        base_opset = 17
+
+        with torch.no_grad():
+            export_quantized_onnx(
+                unet,
+                dummy_inputs,
+                onnx_path,
+                input_names,
+                output_names,
+                dynamic_axes,
+                opset_version=base_opset,
+            )
+
+        # Step 2: Quantize ONNX if needed
         if quant_format != QuantFormat.FP16:
+            from ..lib.quantize import quantize_onnx
+
+            # Generate calibration data for ONNX quantization
             logger.info(f"Generating calibration data ({calibration_steps} samples)...")
             calibration_data = get_calibration_data(
                 model_type=model_info["type"],
@@ -219,39 +252,20 @@ class TRT_MODEL_EXPORT_QUANTIZED:
                 context_len=context_opt,
                 device=device,
                 dtype=dtype,
-                num_samples=calibration_steps,
+                num_samples=min(calibration_steps, 32),  # ONNX quant needs less data
             )
 
-            # Quantize the UNet
-            logger.info(f"Quantizing UNet to {quantization}...")
-            quant_config = QuantConfig(
-                format=quant_format,
-                calibration_size=calibration_steps,
-            )
-            unet = quantize_unet(unet, quant_format, calibration_data, quant_config)
-        else:
-            calibration_data = None
-
-        # Create dummy inputs for ONNX export
-        dummy_inputs, input_names, output_names, dynamic_axes = self._create_dummy_inputs(
-            model_info,
-            batch_opt, height_opt, width_opt, context_opt,
-            device, dtype
-        )
-
-        # Export to ONNX
-        logger.info("Exporting quantized model to ONNX...")
-        unet.eval()
-        with torch.no_grad():
-            export_quantized_onnx(
-                unet,
-                dummy_inputs,
+            # Quantize the ONNX model
+            quantized_onnx_path = onnx_path.with_suffix('.quant.onnx')
+            logger.info(f"Quantizing ONNX to {quantization}...")
+            quantize_onnx(
                 onnx_path,
-                input_names,
-                output_names,
-                dynamic_axes,
-                opset_version=opset_version,
+                quantized_onnx_path,
+                quant_format,
+                calibration_data,
             )
+            # Use quantized ONNX for TRT build
+            onnx_path = quantized_onnx_path
 
         # Extract and save weight mapping
         logger.info("Extracting weight mapping...")
