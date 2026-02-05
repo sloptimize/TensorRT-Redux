@@ -142,34 +142,23 @@ def quantize_unet_fp8(
 
     logger.info("Quantizing UNet to FP8...")
 
-    # Create FP8 config for diffusion UNet (Conv2d + Linear layers)
-    quant_config = {
-        "quant_cfg": {
-            # Match all Linear layers
-            "*linear*": {"num_bits": 8, "axis": None},
-            "*Linear*": {"num_bits": 8, "axis": None},
-            # Match all Conv layers
-            "*conv*": {"num_bits": 8, "axis": None},
-            "*Conv*": {"num_bits": 8, "axis": None},
-            # Match attention projections
-            "*to_q*": {"num_bits": 8, "axis": None},
-            "*to_k*": {"num_bits": 8, "axis": None},
-            "*to_v*": {"num_bits": 8, "axis": None},
-            "*to_out*": {"num_bits": 8, "axis": None},
-            "*proj_in*": {"num_bits": 8, "axis": None},
-            "*proj_out*": {"num_bits": 8, "axis": None},
-            # Feedforward layers
-            "*ff*": {"num_bits": 8, "axis": None},
-            "*net*": {"num_bits": 8, "axis": None},
-            # Default for any nn.Linear or nn.Conv2d
-            "nn.Linear": {"num_bits": 8, "axis": None},
-            "nn.Conv2d": {"num_bits": 8, "axis": None},
-            "nn.Conv1d": {"num_bits": 8, "axis": None},
-        },
-        "algorithm": "max",
-    }
+    # Use modelopt's built-in FP8 config
+    # FP8 supports both Linear and Conv2d layers
+    quant_config = mtq.FP8_DEFAULT_CFG
 
-    # Apply quantization
+    # Log module types before quantization for debugging
+    module_types = {}
+    for name, module in unet.named_modules():
+        module_type = type(module).__name__
+        module_types[module_type] = module_types.get(module_type, 0) + 1
+    logger.info(f"Model module types: {dict(sorted(module_types.items(), key=lambda x: -x[1])[:10])}")
+
+    # Count Linear and Conv2d modules
+    linear_count = sum(1 for m in unet.modules() if isinstance(m, nn.Linear))
+    conv_count = sum(1 for m in unet.modules() if isinstance(m, nn.Conv2d))
+    logger.info(f"Found {linear_count} Linear and {conv_count} Conv2d modules")
+
+    # Calibration forward loop
     def forward_loop(model):
         """Calibration forward loop."""
         if calibration_data is None:
@@ -190,9 +179,21 @@ def quantize_unet_fp8(
                     break
 
     # Quantize the model
+    logger.info("Applying mtq.quantize with FP8_DEFAULT_CFG...")
     mtq.quantize(unet, quant_config, forward_loop)
 
-    # Note: Layer skipping handled via quant_config exclude patterns
+    # Check if quantizers were inserted
+    quantizer_count = sum(1 for name, module in unet.named_modules()
+                         if 'quantizer' in type(module).__name__.lower() or
+                            'quant' in name.lower())
+    logger.info(f"Quantizer modules found after quantization: {quantizer_count}")
+
+    # Print quantization summary if available
+    try:
+        mtq.print_quant_summary(unet)
+    except Exception:
+        pass
+
     logger.info("FP8 quantization complete")
     return unet
 
@@ -207,6 +208,10 @@ def quantize_unet_nvfp4(
 
     NVFP4 uses block quantization with 16-element blocks and FP8 scales.
     Requires Blackwell GPU (SM >= 10.0).
+
+    Note: NVFP4 block quantization only supports Linear layers.
+    Conv2d layers remain in FP16/BF16 for accuracy (per NVIDIA guidance).
+    This is the recommended pattern from NVIDIA for diffusion models.
 
     Args:
         unet: The UNet model to quantize
@@ -238,35 +243,26 @@ def quantize_unet_nvfp4(
     config = config or QuantConfig(format=QuantFormat.NVFP4)
 
     logger.info("Quantizing UNet to NVFP4...")
+    logger.info("Note: NVFP4 only quantizes Linear layers. Conv2d remains in FP16/BF16.")
 
-    # Create NVFP4 config for diffusion UNet (Conv2d + Linear layers)
-    # The default config only matches Linear layers (designed for LLMs)
-    # We need to explicitly include Conv2d for UNet architecture
-    quant_config = {
-        "quant_cfg": {
-            # Match all Linear layers
-            "*linear*": {"num_bits": 4, "axis": None},
-            "*Linear*": {"num_bits": 4, "axis": None},
-            # Match all Conv layers
-            "*conv*": {"num_bits": 4, "axis": None},
-            "*Conv*": {"num_bits": 4, "axis": None},
-            # Match attention projections
-            "*to_q*": {"num_bits": 4, "axis": None},
-            "*to_k*": {"num_bits": 4, "axis": None},
-            "*to_v*": {"num_bits": 4, "axis": None},
-            "*to_out*": {"num_bits": 4, "axis": None},
-            "*proj_in*": {"num_bits": 4, "axis": None},
-            "*proj_out*": {"num_bits": 4, "axis": None},
-            # Feedforward layers
-            "*ff*": {"num_bits": 4, "axis": None},
-            "*net*": {"num_bits": 4, "axis": None},
-            # Default for any nn.Linear or nn.Conv2d
-            "nn.Linear": {"num_bits": 4, "axis": None},
-            "nn.Conv2d": {"num_bits": 4, "axis": None},
-            "nn.Conv1d": {"num_bits": 4, "axis": None},
-        },
-        "algorithm": "max",
-    }
+    # Use modelopt's built-in NVFP4 config
+    # NVFP4 block quantization only supports Linear layers (not Conv2d)
+    # Conv2d layers stay in higher precision, which is NVIDIA's recommended pattern
+    # for diffusion models (maintains accuracy while still getting speedup on Linear layers)
+    quant_config = mtq.NVFP4_DEFAULT_CFG
+
+    # Log module types before quantization for debugging
+    module_types = {}
+    for name, module in unet.named_modules():
+        module_type = type(module).__name__
+        module_types[module_type] = module_types.get(module_type, 0) + 1
+    logger.info(f"Model module types: {dict(sorted(module_types.items(), key=lambda x: -x[1])[:10])}")
+
+    # Count Linear and Conv2d modules
+    linear_count = sum(1 for m in unet.modules() if isinstance(m, nn.Linear))
+    conv_count = sum(1 for m in unet.modules() if isinstance(m, nn.Conv2d))
+    logger.info(f"Found {linear_count} Linear and {conv_count} Conv2d modules")
+    logger.info(f"NVFP4 will quantize {linear_count} Linear layers (Conv2d stays FP16/BF16)")
 
     # Calibration forward loop
     def forward_loop(model):
@@ -288,9 +284,21 @@ def quantize_unet_nvfp4(
                     break
 
     # Apply quantization
+    logger.info("Applying mtq.quantize with NVFP4_DEFAULT_CFG...")
     mtq.quantize(unet, quant_config, forward_loop)
 
-    # Note: Layer skipping handled via quant_config exclude patterns
+    # Check if quantizers were inserted
+    quantizer_count = sum(1 for name, module in unet.named_modules()
+                         if 'quantizer' in type(module).__name__.lower() or
+                            'quant' in name.lower())
+    logger.info(f"Quantizer modules found after quantization: {quantizer_count}")
+
+    # Print quantization summary if available
+    try:
+        mtq.print_quant_summary(unet)
+    except Exception:
+        pass
+
     logger.info("NVFP4 quantization complete")
     return unet
 
