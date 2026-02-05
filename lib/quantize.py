@@ -296,13 +296,13 @@ def export_quantized_onnx(
     input_names: list,
     output_names: list,
     dynamic_axes: Dict[str, Dict[int, str]],
-    opset_version: int = 23,  # Required for FP4 support
+    opset_version: int = 21,  # Opset 21 supports INT4, opset 23 for FP4E2M1
 ) -> None:
     """
     Export a quantized model to ONNX format.
 
-    For FP4/FP8 models, uses ONNX opset 23 which supports
-    FP4E2M1 type and block quantization.
+    For FP4/FP8 models, uses higher ONNX opset versions which support
+    quantized types and block quantization.
 
     Args:
         model: Quantized PyTorch model
@@ -311,25 +311,8 @@ def export_quantized_onnx(
         input_names: Names for input tensors
         output_names: Names for output tensors
         dynamic_axes: Dynamic axis specifications
-        opset_version: ONNX opset version (23 for FP4)
+        opset_version: ONNX opset version
     """
-    try:
-        import modelopt.torch.opt as mto
-    except ImportError:
-        # Fall back to standard export if modelopt not available
-        logger.warning("modelopt not available, using standard ONNX export")
-        torch.onnx.export(
-            model,
-            tuple(dummy_inputs[name] for name in input_names),
-            str(output_path),
-            input_names=input_names,
-            output_names=output_names,
-            dynamic_axes=dynamic_axes,
-            opset_version=opset_version,
-            do_constant_folding=True,
-        )
-        return
-
     logger.info(f"Exporting quantized model to ONNX (opset {opset_version})...")
 
     # Prepare inputs as tuple
@@ -337,8 +320,9 @@ def export_quantized_onnx(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Use modelopt export for proper quantized operator handling
-    mto.export(
+    # Use standard PyTorch ONNX export
+    # The quantized model will include Q/DQ nodes in the graph
+    torch.onnx.export(
         model,
         inputs,
         str(output_path),
@@ -346,6 +330,7 @@ def export_quantized_onnx(
         output_names=output_names,
         dynamic_axes=dynamic_axes,
         opset_version=opset_version,
+        do_constant_folding=True,
     )
 
     logger.info(f"Quantized ONNX export complete: {output_path}")
