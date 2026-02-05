@@ -142,8 +142,32 @@ def quantize_unet_fp8(
 
     logger.info("Quantizing UNet to FP8...")
 
-    # Use modelopt's predefined FP8 config
-    quant_config = mtq.FP8_DEFAULT_CFG
+    # Create FP8 config for diffusion UNet (Conv2d + Linear layers)
+    quant_config = {
+        "quant_cfg": {
+            # Match all Linear layers
+            "*linear*": {"num_bits": 8, "axis": None},
+            "*Linear*": {"num_bits": 8, "axis": None},
+            # Match all Conv layers
+            "*conv*": {"num_bits": 8, "axis": None},
+            "*Conv*": {"num_bits": 8, "axis": None},
+            # Match attention projections
+            "*to_q*": {"num_bits": 8, "axis": None},
+            "*to_k*": {"num_bits": 8, "axis": None},
+            "*to_v*": {"num_bits": 8, "axis": None},
+            "*to_out*": {"num_bits": 8, "axis": None},
+            "*proj_in*": {"num_bits": 8, "axis": None},
+            "*proj_out*": {"num_bits": 8, "axis": None},
+            # Feedforward layers
+            "*ff*": {"num_bits": 8, "axis": None},
+            "*net*": {"num_bits": 8, "axis": None},
+            # Default for any nn.Linear or nn.Conv2d
+            "nn.Linear": {"num_bits": 8, "axis": None},
+            "nn.Conv2d": {"num_bits": 8, "axis": None},
+            "nn.Conv1d": {"num_bits": 8, "axis": None},
+        },
+        "algorithm": "max",
+    }
 
     # Apply quantization
     def forward_loop(model):
@@ -215,9 +239,34 @@ def quantize_unet_nvfp4(
 
     logger.info("Quantizing UNet to NVFP4...")
 
-    # Use modelopt's predefined NVFP4 config
-    # This properly configures block quantization with 16-element blocks
-    quant_config = mtq.NVFP4_DEFAULT_CFG
+    # Create NVFP4 config for diffusion UNet (Conv2d + Linear layers)
+    # The default config only matches Linear layers (designed for LLMs)
+    # We need to explicitly include Conv2d for UNet architecture
+    quant_config = {
+        "quant_cfg": {
+            # Match all Linear layers
+            "*linear*": {"num_bits": 4, "axis": None},
+            "*Linear*": {"num_bits": 4, "axis": None},
+            # Match all Conv layers
+            "*conv*": {"num_bits": 4, "axis": None},
+            "*Conv*": {"num_bits": 4, "axis": None},
+            # Match attention projections
+            "*to_q*": {"num_bits": 4, "axis": None},
+            "*to_k*": {"num_bits": 4, "axis": None},
+            "*to_v*": {"num_bits": 4, "axis": None},
+            "*to_out*": {"num_bits": 4, "axis": None},
+            "*proj_in*": {"num_bits": 4, "axis": None},
+            "*proj_out*": {"num_bits": 4, "axis": None},
+            # Feedforward layers
+            "*ff*": {"num_bits": 4, "axis": None},
+            "*net*": {"num_bits": 4, "axis": None},
+            # Default for any nn.Linear or nn.Conv2d
+            "nn.Linear": {"num_bits": 4, "axis": None},
+            "nn.Conv2d": {"num_bits": 4, "axis": None},
+            "nn.Conv1d": {"num_bits": 4, "axis": None},
+        },
+        "algorithm": "max",
+    }
 
     # Calibration forward loop
     def forward_loop(model):
