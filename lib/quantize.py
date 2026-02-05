@@ -462,8 +462,15 @@ def quantize_onnx(
     calib_data = None
     if calibration_data is not None:
         # modelopt expects a dict or list of numpy arrays
-        calib_data = {k: v.cpu().numpy() if hasattr(v, 'cpu') else v
-                      for k, v in calibration_data.items()}
+        # Note: numpy doesn't support bfloat16, so convert to float32 first
+        def to_numpy(v):
+            if hasattr(v, 'cpu'):
+                v = v.cpu()
+                if v.dtype == torch.bfloat16:
+                    v = v.float()  # bf16 -> fp32
+                return v.numpy()
+            return v
+        calib_data = {k: to_numpy(v) for k, v in calibration_data.items()}
 
     quantize(
         onnx_path=str(onnx_path),
