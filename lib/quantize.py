@@ -85,6 +85,7 @@ def get_calibration_data(
     device: torch.device,
     dtype: torch.dtype,
     num_samples: int = 512,
+    y_dim: int = 0,
 ) -> Dict[str, torch.Tensor]:
     """
     Generate calibration data for PTQ.
@@ -110,6 +111,13 @@ def get_calibration_data(
             device=device, dtype=dtype
         ),
     }
+
+    # Add y (pooled embeddings) for SDXL and similar models
+    if y_dim > 0:
+        calibration_data["y"] = torch.randn(
+            num_samples, y_dim,
+            device=device, dtype=dtype
+        )
 
     return calibration_data
 

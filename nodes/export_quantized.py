@@ -259,6 +259,7 @@ class TRT_MODEL_EXPORT_QUANTIZED:
                 device=device,
                 dtype=dtype,
                 num_samples=min(calibration_steps, 32),  # ONNX quant needs less data
+                y_dim=model_info["y_dim"],  # Include pooled embeddings for SDXL
             )
 
             # Quantize the ONNX model
