@@ -46,6 +46,15 @@ if "tensorrt" not in folder_paths.folder_names_and_paths:
     folder_paths.folder_names_and_paths["tensorrt"] = ([tensorrt_path], {".engine"})
 
 
+def _check_modelopt_available() -> bool:
+    """Check if nvidia-modelopt is installed."""
+    try:
+        import modelopt  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 class TRT_MODEL_EXPORT_QUANTIZED:
     """
     Export a ComfyUI model to TensorRT with FP8 or NVFP4 quantization.
@@ -61,11 +70,25 @@ class TRT_MODEL_EXPORT_QUANTIZED:
 
     @classmethod
     def INPUT_TYPES(cls) -> Dict[str, Any]:
+        # Check what quantization options are available
+        quant_options = ["fp16"]  # Always available
+
+        if _check_modelopt_available():
+            # Check GPU capability
+            if torch.cuda.is_available():
+                capability = torch.cuda.get_device_capability()
+                sm_version = capability[0] * 10 + capability[1]
+
+                if sm_version >= 89:  # Ada Lovelace
+                    quant_options.insert(0, "fp8")
+                if sm_version >= 100:  # Blackwell
+                    quant_options.insert(0, "nvfp4")
+
         return {
             "required": {
                 "model": ("MODEL",),
                 "filename_prefix": ("STRING", {"default": "tensorrt/model_quant"}),
-                "quantization": (["nvfp4", "fp8", "fp16"], {"default": "nvfp4"}),
+                "quantization": (quant_options, {"default": quant_options[0]}),
                 "batch_min": ("INT", {"default": 1, "min": 1, "max": 16}),
                 "batch_opt": ("INT", {"default": 1, "min": 1, "max": 16}),
                 "batch_max": ("INT", {"default": 4, "min": 1, "max": 16}),
@@ -116,21 +139,24 @@ class TRT_MODEL_EXPORT_QUANTIZED:
         available = check_quantization_available()
         quant_format = QuantFormat(quantization)
 
+        if quant_format in (QuantFormat.NVFP4, QuantFormat.FP8) and not available["modelopt"]:
+            raise RuntimeError(
+                f"{quantization.upper()} quantization requires nvidia-modelopt.\n\n"
+                "Install with:\n"
+                "  pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com\n\n"
+                "After installing, restart ComfyUI."
+            )
+
         if quant_format == QuantFormat.NVFP4 and not available["nvfp4"]:
             raise RuntimeError(
-                "NVFP4 quantization requires:\n"
-                "- Blackwell GPU (RTX 50 series, SM >= 10.0)\n"
-                "- CUDA 13.0+\n"
-                "- nvidia-modelopt package\n\n"
-                "Install modelopt: pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com"
+                "NVFP4 quantization requires Blackwell GPU (RTX 50 series, SM >= 10.0).\n"
+                f"Your GPU: SM {torch.cuda.get_device_capability()[0]}.{torch.cuda.get_device_capability()[1]}"
             )
 
         if quant_format == QuantFormat.FP8 and not available["fp8"]:
             raise RuntimeError(
-                "FP8 quantization requires:\n"
-                "- Ada Lovelace+ GPU (RTX 40 series, SM >= 8.9)\n"
-                "- nvidia-modelopt package\n\n"
-                "Install modelopt: pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com"
+                "FP8 quantization requires Ada Lovelace+ GPU (RTX 40 series, SM >= 8.9).\n"
+                f"Your GPU: SM {torch.cuda.get_device_capability()[0]}.{torch.cuda.get_device_capability()[1]}"
             )
 
         # Determine output paths
