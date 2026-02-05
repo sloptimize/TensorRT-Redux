@@ -1,6 +1,22 @@
-tensorrt>=10.0.1
+# Core dependencies
 onnx>=1.14.0,!=1.16.2
 safetensors>=0.4.0
-torch>=2.0.0
 numpy>=1.24.0
 tqdm>=4.65.0
+
+# TensorRT - Installation varies by platform:
+#
+# WINDOWS:
+#   TensorRT doesn't install cleanly via pip on Windows.
+#   Option 1: Use NVIDIA's pre-built wheels
+#     pip install tensorrt-cu12 --extra-index-url https://pypi.nvidia.com
+#
+#   Option 2: Download from NVIDIA (recommended)
+#     1. Download TensorRT 10.x from https://developer.nvidia.com/tensorrt
+#     2. Extract and add to PATH
+#     3. pip install <path_to_tensorrt>/python/tensorrt-10.x.x-cp3xx-none-win_amd64.whl
+#
+# LINUX:
+#   pip install tensorrt>=10.0.1
+#
+# Note: torch is assumed to be installed via ComfyUI

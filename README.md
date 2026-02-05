@@ -34,11 +34,36 @@ Traditional TensorRT engines have "baked-in" weights that can't be modified. Ten
 ```bash
 # Clone into ComfyUI custom_nodes
 cd ComfyUI/custom_nodes
-git clone https://github.com/yourusername/TensorRT-Redux.git
+git clone https://github.com/sloptimize/TensorRT-Redux.git
 
-# Install dependencies
-pip install -r TensorRT-Redux/requirements.txt
+# Install base dependencies
+pip install onnx safetensors numpy tqdm
 ```
+
+### TensorRT Installation
+
+#### Linux
+```bash
+pip install tensorrt>=10.0.1
+```
+
+#### Windows
+
+TensorRT doesn't install cleanly via pip on Windows. Choose one option:
+
+**Option 1: NVIDIA PyPI Index (easiest)**
+```bash
+pip install tensorrt-cu12 --extra-index-url https://pypi.nvidia.com
+```
+
+**Option 2: Manual Download (most reliable)**
+1. Download TensorRT 10.x from [NVIDIA TensorRT](https://developer.nvidia.com/tensorrt)
+2. Extract the zip file
+3. Install the wheel:
+```bash
+pip install <path_to_tensorrt>\python\tensorrt-10.x.x-cp3xx-none-win_amd64.whl
+```
+4. Add the `lib` folder to your PATH or copy DLLs to your Python environment
 
 ## Quick Start
 
