@@ -216,7 +216,11 @@ pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com
 
 2. **(Recommended)** Install cuDNN for faster calibration:
    - Download from [NVIDIA cuDNN](https://developer.nvidia.com/cudnn)
-   - Add the bin folder to your PATH (e.g., `C:\Program Files\NVIDIA\CUDNN\v9.x\bin\13.1` for CUDA 13)
+   - **Easiest method**: Copy DLLs directly into your ComfyUI folder:
+     ```
+     copy "C:\Program Files\NVIDIA\CUDNN\v9.x\bin\13.1\*.dll" "path\to\ComfyUI\"
+     ```
+   - Or add the bin folder to PATH via System Properties → Environment Variables (don't use `setx` - it can truncate PATH)
    - Without cuDNN, calibration falls back to CPU (slower but still works)
 
 3. Use **TensorRT Quantized Export (FP8/NVFP4)** node instead of the standard export
@@ -263,9 +267,10 @@ Ensure the `.onnx` file is in the same directory as the `.engine` file. Both are
 ### "cuDNN library not found" during quantization
 This warning means calibration will use CPU (slower but works). To enable GPU calibration:
 1. Download cuDNN from [NVIDIA cuDNN](https://developer.nvidia.com/cudnn)
-2. Add the appropriate bin folder to your PATH:
+2. Copy DLLs to your ComfyUI folder (easiest), or add to PATH via System Properties GUI:
    - Windows: `C:\Program Files\NVIDIA\CUDNN\v9.x\bin\13.1` (for CUDA 13)
    - Linux: `/usr/local/cuda/lib64` or where cuDNN is installed
+   - **Warning**: Don't use `setx` to modify PATH - it can truncate long paths
 3. Restart ComfyUI
 
 ## Technical Details
