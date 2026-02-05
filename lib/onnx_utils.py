@@ -247,8 +247,8 @@ def parse_onnx_to_trt_network(
     """
     import tensorrt as trt
 
-    logger = trt.Logger(trt.Logger.WARNING)
-    parser = trt.OnnxParser(network, logger)
+    trt_logger = trt.Logger(trt.Logger.WARNING)
+    parser = trt.OnnxParser(network, trt_logger)
 
     with open(onnx_path, "rb") as f:
         if not parser.parse(f.read()):
