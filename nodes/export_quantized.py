@@ -175,15 +175,11 @@ class TRT_MODEL_EXPORT_QUANTIZED:
         mapping_path = Path(output_dir) / f"{base_name}{shape_suffix}_weights.json"
 
         # Determine dtype based on quantization
+        # NVFP4 works best with BF16 base, FP8 uses FP16
         if quant_format == QuantFormat.NVFP4:
-            dtype = torch.bfloat16  # NVFP4 works best with BF16 base
-            opset_version = 23  # Required for FP4 support
-        elif quant_format == QuantFormat.FP8:
-            dtype = torch.float16
-            opset_version = 19  # FP8 support
+            dtype = torch.bfloat16
         else:
             dtype = torch.float16
-            opset_version = 17
 
         # Unload other models and force load target model
         comfy.model_management.unload_all_models()
@@ -223,8 +219,9 @@ class TRT_MODEL_EXPORT_QUANTIZED:
         logger.info("Exporting model to ONNX (will quantize ONNX afterwards)...")
         unet.eval()
 
-        # Use standard opset for initial export
-        base_opset = 17
+        # Use opset 18 - PyTorch's ONNX exporter needs 18+ for some operators
+        # The quantization happens at ONNX level via modelopt, not during export
+        base_opset = 18
 
         with torch.no_grad():
             export_quantized_onnx(
