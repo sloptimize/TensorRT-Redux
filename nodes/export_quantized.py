@@ -17,6 +17,7 @@ import folder_paths
 import comfy.model_management
 import comfy.model_base
 import comfy.supported_models
+import comfy.utils
 
 from ..lib.trt_utils import (
     create_builder_config,
@@ -133,6 +134,11 @@ class TRT_MODEL_EXPORT_QUANTIZED:
     ) -> Tuple:
         """Export quantized model to TensorRT engine."""
 
+        # Set up progress tracking
+        # Steps: 1) Load model, 2) Export ONNX, 3) Quantize ONNX, 4) Extract weights, 5) Build TRT, 6) Cleanup
+        total_steps = 6 if quantization != "fp16" else 5
+        pbar = comfy.utils.ProgressBar(total_steps)
+
         # Check quantization availability
         available = check_quantization_available()
         quant_format = QuantFormat(quantization)
@@ -181,7 +187,8 @@ class TRT_MODEL_EXPORT_QUANTIZED:
         else:
             dtype = torch.float16
 
-        # Unload other models and force load target model
+        # Step 1: Load model
+        logger.info("Step 1/6: Loading model..." if quant_format != QuantFormat.FP16 else "Step 1/5: Loading model...")
         comfy.model_management.unload_all_models()
         comfy.model_management.load_models_gpu(
             [model],
@@ -194,6 +201,7 @@ class TRT_MODEL_EXPORT_QUANTIZED:
         model_info = self._detect_model_type(model)
         logger.info(f"Detected model type: {model_info['type']}")
         logger.info(f"Quantization format: {quantization}")
+        pbar.update(1)
 
         device = comfy.model_management.get_torch_device()
 
@@ -215,8 +223,8 @@ class TRT_MODEL_EXPORT_QUANTIZED:
         # 2. Quantize ONNX using modelopt.onnx.quantization
         # 3. Build TensorRT from quantized ONNX
 
-        # Step 1: Export unquantized model to ONNX
-        logger.info("Exporting model to ONNX (will quantize ONNX afterwards)...")
+        # Step 2: Export unquantized model to ONNX
+        logger.info("Step 2: Exporting model to ONNX...")
         unet.eval()
 
         # Use opset 18 - PyTorch's ONNX exporter needs 18+ for some operators
@@ -233,13 +241,14 @@ class TRT_MODEL_EXPORT_QUANTIZED:
                 dynamic_axes,
                 opset_version=base_opset,
             )
+        pbar.update(1)
 
-        # Step 2: Quantize ONNX if needed
+        # Step 3: Quantize ONNX if needed
         if quant_format != QuantFormat.FP16:
             from ..lib.quantize import quantize_onnx
 
+            logger.info("Step 3: Quantizing ONNX model...")
             # Generate calibration data for ONNX quantization
-            logger.info(f"Generating calibration data ({calibration_steps} samples)...")
             calibration_data = get_calibration_data(
                 model_type=model_info["type"],
                 batch_size=batch_opt,
@@ -254,7 +263,6 @@ class TRT_MODEL_EXPORT_QUANTIZED:
 
             # Quantize the ONNX model
             quantized_onnx_path = onnx_path.with_suffix('.quant.onnx')
-            logger.info(f"Quantizing ONNX to {quantization}...")
             quantize_onnx(
                 onnx_path,
                 quantized_onnx_path,
@@ -263,14 +271,16 @@ class TRT_MODEL_EXPORT_QUANTIZED:
             )
             # Use quantized ONNX for TRT build
             onnx_path = quantized_onnx_path
+            pbar.update(1)
 
-        # Extract and save weight mapping
-        logger.info("Extracting weight mapping...")
+        # Step 4: Extract and save weight mapping
+        logger.info("Step 4: Extracting weight mapping...")
         weight_mapping = extract_weight_mapping(onnx_path)
         save_weight_mapping(weight_mapping, mapping_path)
+        pbar.update(1)
 
-        # Build TensorRT engine
-        logger.info("Building TensorRT engine (this may take several minutes)...")
+        # Step 5: Build TensorRT engine
+        logger.info("Step 5: Building TensorRT engine (this may take several minutes)...")
         self._build_trt_engine(
             onnx_path,
             engine_path,
@@ -284,12 +294,15 @@ class TRT_MODEL_EXPORT_QUANTIZED:
             dtype,
             enable_refit,
         )
+        pbar.update(1)
 
-        # Cleanup
+        # Step 6: Cleanup
+        logger.info("Step 6: Cleaning up...")
         comfy.model_management.unload_all_models()
         comfy.model_management.soft_empty_cache()
+        pbar.update(1)
 
-        logger.info(f"Quantized export complete!")
+        logger.info(f"Export complete!")
         logger.info(f"  Engine: {engine_path}")
         logger.info(f"  ONNX: {onnx_path}")
         logger.info(f"  Weights: {mapping_path}")
