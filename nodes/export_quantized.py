@@ -180,12 +180,11 @@ class TRT_MODEL_EXPORT_QUANTIZED:
         onnx_path = Path(output_dir) / f"{base_name}{shape_suffix}.onnx"
         mapping_path = Path(output_dir) / f"{base_name}{shape_suffix}_weights.json"
 
-        # Determine dtype based on quantization
-        # NVFP4 works best with BF16 base, FP8 uses FP16
-        if quant_format == QuantFormat.NVFP4:
-            dtype = torch.bfloat16
-        else:
-            dtype = torch.float16
+        # Determine dtype for ONNX export
+        # Note: We use FP16 for all formats because ONNX Runtime (used by modelopt
+        # for calibration) doesn't support BF16 Conv ops on CPU fallback.
+        # The final TensorRT engine can still use optimal precision.
+        dtype = torch.float16
 
         # Step 1: Load model
         logger.info("Step 1/6: Loading model..." if quant_format != QuantFormat.FP16 else "Step 1/5: Loading model...")
