@@ -102,8 +102,8 @@ def get_calibration_data(
         ),
         "timesteps": torch.randint(
             0, 1000, (num_samples,),
-            device=device, dtype=dtype
-        ),
+            device=device, dtype=torch.float32  # timesteps should be float32, not bf16
+        ).to(dtype),
         "context": torch.randn(
             num_samples, context_len, context_dim,
             device=device, dtype=dtype
@@ -142,8 +142,8 @@ def quantize_unet_fp8(
 
     logger.info("Quantizing UNet to FP8...")
 
-    # Define quantization config
-    quant_config = mtq.FP8_DEFAULT_CFG.copy()
+    # Use modelopt's predefined FP8 config
+    quant_config = mtq.FP8_DEFAULT_CFG
 
     # Apply quantization
     def forward_loop(model):
@@ -215,23 +215,9 @@ def quantize_unet_nvfp4(
 
     logger.info("Quantizing UNet to NVFP4...")
 
-    # Define NVFP4 quantization config
-    # NVFP4 uses E2M1 format with block size 16 and FP8 E4M3 scales
-    quant_config = {
-        "quant_cfg": {
-            "*weight_quantizer": {
-                "num_bits": 4,
-                "block_sizes": {-1: 16},  # Block size of 16 along last dimension
-                "enable": True,
-            },
-            "*input_quantizer": {
-                "num_bits": 4,
-                "block_sizes": {-1: 16},
-                "enable": True,
-            },
-        },
-        "algorithm": "max",
-    }
+    # Use modelopt's predefined NVFP4 config
+    # This properly configures block quantization with 16-element blocks
+    quant_config = mtq.NVFP4_DEFAULT_CFG
 
     # Calibration forward loop
     def forward_loop(model):
