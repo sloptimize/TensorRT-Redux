@@ -214,12 +214,16 @@ pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com
 pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com
 ```
 
-2. Use **TensorRT Quantized Export (FP8/NVFP4)** node instead of the standard export
-3. Select your quantization level (nvfp4, fp8, or fp16)
-4. The node will:
-   - Generate calibration data
-   - Quantize using NVIDIA Model Optimizer PTQ
-   - Export quantized ONNX (opset 23 for FP4)
+2. **(Recommended)** Install cuDNN for faster calibration:
+   - Download from [NVIDIA cuDNN](https://developer.nvidia.com/cudnn)
+   - Add the bin folder to your PATH (e.g., `C:\Program Files\NVIDIA\CUDNN\v9.x\bin\13.1` for CUDA 13)
+   - Without cuDNN, calibration falls back to CPU (slower but still works)
+
+3. Use **TensorRT Quantized Export (FP8/NVFP4)** node instead of the standard export
+4. Select your quantization level (nvfp4, fp8, or fp16)
+5. The node will:
+   - Export model to ONNX
+   - Quantize ONNX using NVIDIA Model Optimizer
    - Build optimized TensorRT engine
 
 ### LoRA with Quantized Models
@@ -255,6 +259,14 @@ Ensure the `.onnx` file is in the same directory as the `.engine` file. Both are
 - Reduce resolution range (smaller max height/width)
 - Close other GPU applications
 - Use a smaller batch_max value
+
+### "cuDNN library not found" during quantization
+This warning means calibration will use CPU (slower but works). To enable GPU calibration:
+1. Download cuDNN from [NVIDIA cuDNN](https://developer.nvidia.com/cudnn)
+2. Add the appropriate bin folder to your PATH:
+   - Windows: `C:\Program Files\NVIDIA\CUDNN\v9.x\bin\13.1` (for CUDA 13)
+   - Linux: `/usr/local/cuda/lib64` or where cuDNN is installed
+3. Restart ComfyUI
 
 ## Technical Details
 
@@ -293,4 +305,4 @@ MIT License
 - [ComfyUI_TensorRT](https://github.com/comfyanonymous/ComfyUI_TensorRT) - Original TensorRT nodes
 - [NVIDIA Stable-Diffusion-WebUI-TensorRT](https://github.com/NVIDIA/Stable-Diffusion-WebUI-TensorRT) - LoRA refitting approach
 - [NVIDIA TensorRT](https://developer.nvidia.com/tensorrt) - Inference optimization
-- [NVIDIA TensorRT Model Optimizer](https://github.com/NVIDIA/TensorRT-Model-Optimizer) - FP8/NVFP4 quantization
+- [NVIDIA Model Optimizer](https://github.com/NVIDIA/Model-Optimizer) - FP8/NVFP4 quantization
