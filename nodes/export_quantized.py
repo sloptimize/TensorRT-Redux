@@ -203,6 +203,10 @@ class TRT_MODEL_EXPORT_QUANTIZED:
 
         device = comfy.model_management.get_torch_device()
 
+        # Convert model to target dtype to avoid mismatches
+        logger.info(f"Converting model to {dtype}...")
+        unet = unet.to(dtype=dtype)
+
         # Generate calibration data for PTQ
         if quant_format != QuantFormat.FP16:
             logger.info(f"Generating calibration data ({calibration_steps} samples)...")
