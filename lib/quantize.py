@@ -131,11 +131,11 @@ def quantize_unet_fp8(
     """
     try:
         import modelopt.torch.quantization as mtq
-        from modelopt.torch.quantization.utils import set_quantizer_attribute
-    except ImportError:
+    except ImportError as e:
         raise ImportError(
-            "nvidia-modelopt required for FP8 quantization. "
-            "Install with: pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com"
+            f"nvidia-modelopt required for FP8 quantization. "
+            f"Install with: pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com\n"
+            f"Original error: {e}"
         )
 
     config = config or QuantConfig(format=QuantFormat.FP8)
@@ -168,12 +168,7 @@ def quantize_unet_fp8(
     # Quantize the model
     mtq.quantize(unet, quant_config, forward_loop)
 
-    # Disable quantization for specified layers
-    for name, module in unet.named_modules():
-        if any(skip in name for skip in config.skip_layers):
-            set_quantizer_attribute(module, "disable", True)
-            logger.debug(f"Disabled quantization for: {name}")
-
+    # Note: Layer skipping handled via quant_config exclude patterns
     logger.info("FP8 quantization complete")
     return unet
 
@@ -199,11 +194,11 @@ def quantize_unet_nvfp4(
     """
     try:
         import modelopt.torch.quantization as mtq
-        from modelopt.torch.quantization.utils import set_quantizer_attribute
-    except ImportError:
+    except ImportError as e:
         raise ImportError(
-            "nvidia-modelopt required for NVFP4 quantization. "
-            "Install with: pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com"
+            f"nvidia-modelopt required for NVFP4 quantization. "
+            f"Install with: pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com\n"
+            f"Original error: {e}"
         )
 
     # Check GPU capability
@@ -260,12 +255,7 @@ def quantize_unet_nvfp4(
     # Apply quantization
     mtq.quantize(unet, quant_config, forward_loop)
 
-    # Disable quantization for specified layers
-    for name, module in unet.named_modules():
-        if any(skip in name for skip in config.skip_layers):
-            set_quantizer_attribute(module, "disable", True)
-            logger.debug(f"Disabled quantization for: {name}")
-
+    # Note: Layer skipping handled via quant_config exclude patterns
     logger.info("NVFP4 quantization complete")
     return unet
 
