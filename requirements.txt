@@ -1,5 +1,5 @@
 # Core dependencies
-onnx>=1.14.0,!=1.16.2
+onnx>=1.18.0
 safetensors>=0.4.0
 numpy>=1.24.0
 tqdm>=4.65.0
@@ -21,3 +21,11 @@ tqdm>=4.65.0
 #   pip install tensorrt>=10.0.1
 #
 # Note: torch is assumed to be installed via ComfyUI
+
+# NVFP4/FP8 Quantization (optional, for quantized exports):
+#
+# pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com
+#
+# Requirements:
+#   - NVFP4: Blackwell GPU (RTX 50 series, SM >= 10.0) + CUDA 13.0
+#   - FP8: Ada Lovelace+ (RTX 40 series, SM >= 8.9) + CUDA 12.0+

@@ -163,6 +163,30 @@ Load TensorRT engine with multiple stacked LoRAs.
 | model_type | ENUM | Model architecture |
 | lora_stack | TRT_LORA_STACK | LoRA stack from TRT_LORA_STACK |
 
+### TRT_MODEL_EXPORT_QUANTIZED
+Export a quantized model to TensorRT with FP8 or NVFP4 precision.
+
+| Input | Type | Description |
+|-------|------|-------------|
+| model | MODEL | ComfyUI model from Load Checkpoint |
+| filename_prefix | STRING | Output path/name |
+| quantization | ENUM | nvfp4, fp8, or fp16 |
+| batch_min/opt/max | INT | Batch size range |
+| height_min/opt/max | INT | Height range (pixels) |
+| width_min/opt/max | INT | Width range (pixels) |
+| context_min/opt/max | INT | Context length range |
+| enable_refit | BOOL | Enable LoRA support (default: True) |
+| calibration_steps | INT | PTQ calibration samples (default: 512) |
+
+**Requirements**:
+- NVFP4: RTX 50 series (Blackwell) + CUDA 13.0 + nvidia-modelopt
+- FP8: RTX 40 series+ + nvidia-modelopt
+
+**Install nvidia-modelopt**:
+```bash
+pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com
+```
+
 ## Supported Models
 
 | Model | Status | Notes |
@@ -175,25 +199,44 @@ Load TensorRT engine with multiple stacked LoRAs.
 | Flux | 🔄 Planned | Phase 2 |
 | Wan 2.2 | 🔄 Planned | Phase 2 |
 
-## Quantization Roadmap
+## Quantization Support
 
-| Precision | Hardware | Status |
-|-----------|----------|--------|
-| FP16 | All NVIDIA GPUs | ✅ Supported |
-| FP8 | RTX 40 series+ | 🔄 Phase 2 |
-| NVFP4 | RTX 50 series (Blackwell) | 🔄 Phase 3 |
+| Precision | Hardware | Status | Speedup | VRAM Savings |
+|-----------|----------|--------|---------|--------------|
+| FP16 | All NVIDIA GPUs | ✅ Supported | ~2x | baseline |
+| FP8 | RTX 40 series+ (Ada) | ✅ Supported | ~2.5x | ~40% |
+| NVFP4 | RTX 50 series (Blackwell) | ✅ Supported | ~3x | ~60% |
 
-NVFP4 quantization can provide ~3x speedup with minimal quality loss. LoRAs remain in FP16 for accuracy (following [NVIDIA's recommended pattern](https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/)).
+### Using Quantized Export
+
+1. Install nvidia-modelopt:
+```bash
+pip install nvidia-modelopt[all] --extra-index-url https://pypi.nvidia.com
+```
+
+2. Use **TensorRT Quantized Export (FP8/NVFP4)** node instead of the standard export
+3. Select your quantization level (nvfp4, fp8, or fp16)
+4. The node will:
+   - Generate calibration data
+   - Quantize using NVIDIA Model Optimizer PTQ
+   - Export quantized ONNX (opset 23 for FP4)
+   - Build optimized TensorRT engine
+
+### LoRA with Quantized Models
+
+LoRAs remain in FP16 for accuracy, following [NVIDIA's recommended pattern](https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/). The TensorRT refitting applies FP16 LoRA deltas to the quantized engine - you get the speed benefits of quantization plus full LoRA flexibility.
 
 ## Performance
 
-Typical speedups vs standard PyTorch inference:
+Benchmarks from [NVIDIA's FLUX testing](https://developer.nvidia.com/blog/nvidia-tensorrt-unlocks-fp4-image-generation-for-nvidia-blackwell-geforce-rtx-50-series-gpus/) on RTX 5090:
 
-| Configuration | Speedup |
-|--------------|---------|
-| TensorRT FP16 | ~2x |
-| TensorRT FP8 | ~2.5x |
-| TensorRT NVFP4 | ~3x |
+| Configuration | FLUX.1-dev (30 steps) | vs FP16 |
+|--------------|----------------------|---------|
+| FP16 | 10,931ms | baseline |
+| FP8 | 6,681ms | 1.6x faster |
+| **NVFP4** | **3,853ms** | **2.8x faster** |
+
+VRAM usage: 23.9GB (FP16) → 11.1GB (NVFP4) = **54% reduction**
 
 LoRA refitting adds minimal overhead (~1 second when switching LoRAs).
 
@@ -250,3 +293,4 @@ MIT License
 - [ComfyUI_TensorRT](https://github.com/comfyanonymous/ComfyUI_TensorRT) - Original TensorRT nodes
 - [NVIDIA Stable-Diffusion-WebUI-TensorRT](https://github.com/NVIDIA/Stable-Diffusion-WebUI-TensorRT) - LoRA refitting approach
 - [NVIDIA TensorRT](https://developer.nvidia.com/tensorrt) - Inference optimization
+- [NVIDIA TensorRT Model Optimizer](https://github.com/NVIDIA/TensorRT-Model-Optimizer) - FP8/NVFP4 quantization
