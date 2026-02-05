@@ -53,7 +53,11 @@ TensorRT doesn't install cleanly via pip on Windows. Choose one option:
 
 **Option 1: NVIDIA PyPI Index (easiest)**
 ```bash
+# For CUDA 12.x
 pip install tensorrt-cu12 --extra-index-url https://pypi.nvidia.com
+
+# For CUDA 13.x (Blackwell GPUs)
+pip install tensorrt-cu13 --extra-index-url https://pypi.nvidia.com
 ```
 
 **Option 2: Manual Download (most reliable)**

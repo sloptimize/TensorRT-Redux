@@ -10,6 +10,7 @@ tqdm>=4.65.0
 #   TensorRT doesn't install cleanly via pip on Windows.
 #   Option 1: Use NVIDIA's pre-built wheels
 #     pip install tensorrt-cu12 --extra-index-url https://pypi.nvidia.com
+#     (or tensorrt-cu13 for CUDA 13.x / Blackwell GPUs)
 #
 #   Option 2: Download from NVIDIA (recommended)
 #     1. Download TensorRT 10.x from https://developer.nvidia.com/tensorrt
